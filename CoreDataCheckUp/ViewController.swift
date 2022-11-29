@@ -49,10 +49,10 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         // get people from Core Data
         do {
             
+            
+            // This only fetches the Name Ted 
             let request = Person.fetchRequest() as NSFetchRequest<Person>
-            
             let predicate = NSPredicate(format: "name CONTAINS 'Ted'")
-            
             request.predicate = predicate
             
             self.items = try context.fetch(request)
