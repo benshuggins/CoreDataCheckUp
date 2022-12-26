@@ -20,7 +20,9 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     
     let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
   
-    var models = [ToDoListItem]()
+    
+    
+    var fetchedResultsController: NSFetchedResultsController<Person>! //1
     
     var items: [Person]?   // This is the core data sot
   
@@ -29,6 +31,12 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         table.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         return table
     }()
+    
+//    override func viewWillAppear(_ animated: Bool) {
+//        super.viewWillAppear(true)
+//
+//        tableView.reloadData()
+//    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,29 +49,45 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         let add = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(didTapBarButton))
         
         navigationItem.rightBarButtonItem = add
+     
         
-        fetchPeople()
+      //  fetchPeople()  // this is the old NSFetch()
+        fetchPeopleResultsController() // this is with NSFetchResultsController
     }
     
-    func fetchPeople() {
-        // get people from Core Data
-        do {
-            
-            
-            // This only fetches the Name Ted 
+    // This doesn't use NSFETCHRESULTSCONTROLLER
+    
+//    func fetchPeople() {
+//        do {
+//            // This only fetches the Name Ted
+//            let request = Person.fetchRequest() as NSFetchRequest<Person>
+////            let predicate = NSPredicate(format: "name CONTAINS 'Ted'")
+////            request.predicate = predicate
+//            self.items = try context.fetch(request)
+//            DispatchQueue.main.async {
+//                self.tableView.reloadData()
+//            }
+//        } catch {
+//            // handle error
+//        }
+//    }
+    
+    func fetchPeopleResultsController() {
+        if fetchedResultsController == nil {
             let request = Person.fetchRequest() as NSFetchRequest<Person>
-            let predicate = NSPredicate(format: "name CONTAINS 'Ted'")
-            request.predicate = predicate
+            let sort = NSSortDescriptor(key: "name", ascending: false)
+            request.sortDescriptors = [sort]
+            request.fetchBatchSize = 20
+            fetchedResultsController = NSFetchedResultsController(fetchRequest: request, managedObjectContext: context, sectionNameKeyPath: nil, cacheName: nil)
+            fetchedResultsController.delegate = self
             
-            self.items = try context.fetch(request)
-            DispatchQueue.main.async {
-                self.tableView.reloadData()
-            }
-           
-        } catch {
-            // handle error
         }
-        
+        do {
+            try fetchedResultsController.performFetch()
+            tableView.reloadData()
+        } catch {
+            print("Error: \(error)")
+        }
     }
     
     @objc func didTapBarButton() {
@@ -71,11 +95,8 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         let alert = UIAlertController(title: "Add Person", message: "What is your name?", preferredStyle: .alert)
         
         alert.addTextField(configurationHandler: nil)
-        
         let submitButton = UIAlertAction(title: "Add", style: .default) { (action) in
-            
             let textField = alert.textFields?[0]
-            
             let newPerson = Person(context: self.context)
             newPerson.name = textField?.text
             newPerson.age = Date()
@@ -85,14 +106,14 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
             } catch {
                  // catch the error
             }
-            
-            self.fetchPeople()
+            self.fetchPeopleResultsController()
+           // self.fetchPeople()
         }
         
         alert.addAction(submitButton)
        
       
-           // self?.createItem(name: text)
+          //  self?.createItem(name: text)
         present(alert, animated: true)
            // self?.tableView.reloadData()
     
@@ -105,15 +126,18 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
 //
 //    func createItem(name: String) {
 //        let createdAt = Date()
-//       // let newName = Person(name: name)
+//    let newName = Person(name: name)
 //        items?.append(newName)
 //        //models.append(newName)
 //        tableView.reloadData()
 //    }
-    
+//
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return items!.count
+     //   return items?.count ?? 0    // this is the NSfetched() way
+        
+        let sectionInfo = fetchedResultsController.sections![section]
+        return sectionInfo.numberOfObjects
     }
     
     
@@ -121,71 +145,103 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
 
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
-        let person = self.items![indexPath.row]
+      
+        //let person = self.items![indexPath.row] // old way
+        let person = fetchedResultsController.object(at: indexPath)
+        
         cell.textLabel?.text = person.name
         return cell
     }
-    
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-       
-        let person = self.items![indexPath.row]
-     
-        let alert = UIAlertController(title: "Edit Person", message: "Edit name: ", preferredStyle: .alert)
-        
-        alert.addTextField()
-        
-        let textField = alert.textFields![0]
-        textField.text = person.name
-        
-        let saveButton = UIAlertAction(title: "Save", style: .default) { (action) in
+  
+     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        if editingStyle == .delete {
             
-            let textField = alert.textFields![0]
-            
-            person.name = textField.text
+            let person = fetchedResultsController.object(at: indexPath)
+            context.delete(person)
             
             do {
-                try self.context.save()
-            } catch {
+                try context.save()
                 
+            } catch {
+                print("error")
             }
-            
-            self.fetchPeople()
         }
-        
-        alert.addAction(saveButton)
-        
-        self.present(alert, animated: true)
-     
+    }
+}
+
+extension ViewController: NSFetchedResultsControllerDelegate {
     
+    func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
+        print("*** ControllerWillChangeContent")
+        tableView.beginUpdates()
     }
     
-    
-    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        let actionLike = UIContextualAction(style: .destructive, title: "Delete") { (action, view, completionHandler) in
-            
-            
-            let personToRemove = self.items![indexPath.row]
-            
-            self.context.delete(personToRemove)
-            
-            do {
-               try self.context.save()
-            } catch {
-                
-            }
-            
-            self.fetchPeople()
-            
-            completionHandler(true)
-            
-            
-        }
-        return UISwipeActionsConfiguration(actions: [actionLike])
-    }
-    
+    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>,
+      didChange anObject: Any,
+      at indexPath: IndexPath?,
+      for type: NSFetchedResultsChangeType,
+      newIndexPath: IndexPath?
+    ) {
+      switch type {
+      case .insert:
+        print("*** NSFetchedResultsChangeInsert (object)")
+        tableView.insertRows(at: [newIndexPath!], with: .fade)
+
+      case .delete:
+        print("*** NSFetchedResultsChangeDelete (object)")
+        tableView.deleteRows(at: [indexPath!], with: .fade)
+
+      case .update:
+        print("*** NSFetchedResultsChangeUpdate (object)")
+     //   if let cell = tableView.cellForRow(
+//          at: indexPath!) as? LocationCell {
+//          let location = controller.object(
+//            at: indexPath!) as! Location
+//          cell.configure(for: location)
+//        }
+
+      case .move:
+        print("*** NSFetchedResultsChangeMove (object)")
+        tableView.deleteRows(at: [indexPath!], with: .fade)
+        tableView.insertRows(at: [newIndexPath!], with: .fade)
+
+      @unknown default:
+        print("*** NSFetchedResults unknown type")
+      }
     }
 
-        
+    func controller(
+      _ controller: NSFetchedResultsController<NSFetchRequestResult>,
+      didChange sectionInfo: NSFetchedResultsSectionInfo,
+      atSectionIndex sectionIndex: Int,
+      for type: NSFetchedResultsChangeType
+    ) {
+      switch type {
+      case .insert:
+        print("*** NSFetchedResultsChangeInsert (section)")
+        tableView.insertSections(
+          IndexSet(integer: sectionIndex), with: .fade)
+      case .delete:
+        print("*** NSFetchedResultsChangeDelete (section)")
+        tableView.deleteSections(
+          IndexSet(integer: sectionIndex), with: .fade)
+      case .update:
+        print("*** NSFetchedResultsChangeUpdate (section)")
+      case .move:
+        print("*** NSFetchedResultsChangeMove (section)")
+      @unknown default:
+        print("*** NSFetchedResults unknown type")
+      }
+    }
+
+    func controllerDidChangeContent(
+      _ controller: NSFetchedResultsController<NSFetchRequestResult>
+    ) {
+      print("*** controllerDidChangeContent")
+      tableView.endUpdates()
+    }
+    
+}
         
 
 
